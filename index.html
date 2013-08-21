@@ -1,0 +1,76 @@
+<html>
+  <head>
+    <style>
+      .graph { width: 1000px; height: 500px; position: relative; }
+
+      .example-bar {
+        position: absolute;
+        bottom: 0;
+        width: 10px;
+        border: 1px solid #9f9;
+        z-index: 0;
+      }
+
+      .example-details {
+        position: fixed;
+        top: 0;
+        left: 0;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.5);
+        display: none;
+        width: 100%
+        z-index: 100;
+        overflow: auto;
+      }
+
+      .passed { background: green; }
+      .failed { background: red; }
+    </style>
+    <script src='http://code.jquery.com/jquery-2.0.3.min.js'></script>
+    <script src='http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.1/underscore-min.js'></script>
+    <script>
+      $(function () {
+        var data = $.get('/rspec.json')
+          , tmp = _.template($('#template').html())
+          ;
+
+        data.then(function (d) {
+          var max = _(d.examples).max(function (i) { return i.duration; })
+            , min = 0
+            ;
+
+          $(d.examples).each(function () {
+            this.duration_percent = (this.duration / max.duration) * 100;
+          });
+
+          $(d.examples).each(function (ind) {
+            this.index = ind;
+            $('.graph').append(tmp(this));
+          });
+        });
+
+        $(document).on('mouseenter', '.example-bar', function () {
+          $('.example-details', this).show();
+          $(this).css({'z-index': 100});
+        }).on('mouseleave', '.example-bar', function () {
+          $('.example-details', this).hide();
+          $(this).css({'z-index': 0});
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <div class='graph'></div>
+    <script type='text/template' id='template'>
+      <div class='example-bar <%= status %>'
+           style='height: <%= duration_percent %>%; left: <%= 10 * index %>px'>
+        <ul class='example-details'>
+          <li><%= description %></li>
+          <li><%= full_description %></li>
+          <li><%= file_path %>:<%= line_number %></li>
+          <li><%= duration %> seconds to complete</li>
+        </ul>
+      </div>
+    </script>
+  </body>
+</html>

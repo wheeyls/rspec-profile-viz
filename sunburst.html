@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<head>
+  <style>
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      margin: auto;
+      position: relative;
+      width: 960px;
+    }
+
+    form {
+      position: absolute;
+      right: 10px;
+      top: 10px;
+    }
+
+    .example-details {
+      position: fixed;
+      top: 0;
+      left: 0;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.5);
+      width: 100%
+      z-index: 100;
+      overflow: auto;
+      max-width: 300px;
+    }
+  </style>
+  <script src='http://code.jquery.com/jquery-2.0.3.min.js'></script>
+  <script src='http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.1/underscore-min.js'></script>
+  <script src="http://d3js.org/d3.v3.min.js"></script>
+  </head>
+  <body>
+    <form>
+      <label><input type="radio" name="mode" value="size"> Time</label>
+      <label><input type="radio" name="mode" value="count" checked> Count</label>
+    </form>
+
+    <div class='example-wrapper'></div>
+
+    <script type='text/template' id='template'>
+      <ul class='example-details'>
+        <li><%= name %></li>
+        <li>Line Number:<%= line_number %></li>
+        <li>Status: <%= status %></li>
+        <li><%= value %> <%= time_or_count %></li>
+      </ul>
+    </script>
+
+    <script>
+      var width = 960,
+          height = 700,
+          radius = Math.min(width, height) / 2,
+          color = d3.scale.category20c(),
+          isCount = true;
+
+      var svg = d3.select("body").append("svg")
+          .attr("width", width)
+          .attr("height", height)
+        .append("g")
+          .attr("transform", "translate(" + width / 2 + "," + height * .52 + ")");
+
+      var partition = d3.layout.partition()
+          .sort(null)
+          .size([2 * Math.PI, radius * radius])
+          .value(function(d) { return 1; });
+
+      var arc = d3.svg.arc()
+          .startAngle(function(d) { return d.x; })
+          .endAngle(function(d) { return d.x + d.dx; })
+          .innerRadius(function(d) { return Math.sqrt(d.y); })
+          .outerRadius(function(d) { return Math.sqrt(d.y + d.dy); });
+
+      d3.json("rspec.json", function(error, root) {
+        root = pathNameToTree(root.examples);
+
+        var path = svg.datum(root).selectAll("path")
+            .data(partition.nodes)
+          .enter().append("path")
+            .attr("display", function(d) { return d.depth ? null : "none"; }) // hide inner ring
+            .attr("d", arc)
+            .style("stroke", function (d) {
+              if (d.status && d.status === 'failed') {
+                return '#f00';
+              } else {
+                return '#fff';
+              }
+            })
+            .style("fill", function(d) { return color((d.children ? d : d.parent).name); })
+            .style("fill-rule", "evenodd")
+            .each(stash)
+            .on('mouseover', showDetails);
+
+        d3.selectAll("input").on("change", function change() {
+          var value = this.value === "count"
+              ? function() { return 1; }
+              : function(d) { return d.size; };
+
+          isCount = this.value === 'count';
+
+          path
+              .data(partition.value(value).nodes)
+            .transition()
+              .duration(1500)
+              .attrTween("d", arcTween);
+        })
+      });
+
+      // Stash the old values for transition.
+      function stash(d) {
+        d.x0 = d.x;
+        d.dx0 = d.dx;
+      }
+
+      // Interpolate the arcs in data space.
+      function arcTween(a) {
+        var i = d3.interpolate({x: a.x0, dx: a.dx0}, a);
+        return function(t) {
+          var b = i(t);
+          a.x0 = b.x;
+          a.dx0 = b.dx;
+          return arc(b);
+        };
+      }
+
+      d3.select(self.frameElement).style("height", height + "px");
+
+
+      var tmpl = _.template($('#template').html());
+
+      function showDetails(data) {
+        var mappedData = $.extend({
+          name: ''
+        , line_number: ''
+        , status: ''
+        , duration: ''
+        , time_or_count: isCount ? 'Examples' : 'Seconds'
+        }, data);
+
+        !isCount && (mappedData.value = mappedData.value.toFixed(3));
+
+        $('.example-wrapper').html(tmpl(mappedData)).show();
+      }
+
+      function createNodes(path, data, node) {
+        var nextNode
+          ;
+
+        node.children = node.children || [];
+
+        if (path.length === 0) {
+          nextNode = $.extend({
+            size: data.duration
+          , name: data.full_description
+          }, data);
+
+          node.children.push(nextNode);
+          return;
+        }
+
+        nextNode = node.children.filter(function (child) {
+          return child.name === path[0];
+        })[0];
+
+        if (!nextNode) {
+          nextNode = { name: path[0] };
+          node.children.push(nextNode);
+        }
+
+        path.shift();
+        createNodes(path, data, nextNode);
+      }
+
+      function pathNameToTree(examples) {
+        var tree = {};
+
+        examples.forEach(function (data) {
+          path = data.file_path.split('/');
+          path.shift();
+          createNodes(path, data, tree);
+        });
+
+        return tree;
+      }
+    </script>
+  </body>
+</html>
